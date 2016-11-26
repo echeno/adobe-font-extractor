@@ -1,9 +1,24 @@
 import sys
 import os
 import argparse
-import xml.etree.ElementTree as ET
+import shutil
+from os.path import join as pjoin
+from xml.etree import ElementTree
 from collections import namedtuple
 from pprint import pprint
+from distutils.dir_util import mkpath
+
+class AdobeCCFontExtractor:
+    pass
+
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as e:
+        if e.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
 
 # global configuration object
 class Config:
@@ -13,25 +28,29 @@ class Config:
     install_path = ''
 
 # font data object
-FontEntry = namedtuple('FontEntry', 'id name weight')
+FontData = namedtuple('FontData', 'id name weight')
 
 def get_font_metadata(manifest_path):
-    tree = ET.parse(manifest_path)
-    fonts = tree.getroot().find('fonts') # fonts list element
-    
-    font_data = []
+    tree = ElementTree.parse(manifest_path)
 
-    for font in fonts.findall('font'):
-        props = font.find('properties')
-        f = {}
-        f['id'] = font.find('id').text
-        f['name'] = props.find('familyName').text
-        f['weight'] = props.find('variationName').text
-        font_data.append(f)
+    # find the <fonts> element containing the list of fonts
+    fonts_subtree = tree.getroot().find('fonts')
 
-    return font_data
+    fonts = []
 
-# install the fonts per the --install flag
+    for font_elem in fonts_subtree.findall('font'):
+        props = font_elem.find('properties')
+        f_id = font_elem.find('id').text
+        f_name = props.find('familyName').text
+        f_weight = props.find('variationName').text
+
+        font = FontData(id=f_id, name=f_name, weight=f_weight)
+
+        fonts.append(font)
+
+    return fonts
+
+# install the fonts on the system per the --install flag
 def install_fonts(fonts):
     pass
 
@@ -41,19 +60,31 @@ def install_fonts(fonts):
 #     Font1/
 #         Font1 - Variation1.otf
 #         Font1 - Variation2.otf
-def extract_fonts(fonts, location):
+def extract_fonts(fonts, font_dir, location):
+    # make dirs to location if they don't exist
+    mkpath(location)
+
+    for font in fonts:
+        src = pjoin(font_dir, str(font.id))
+        filename = font.name + ' - ' + font.weight
+        dest = pjoin(location, filename)
+        shutil.copy(src, dest)
+
+
+def sync_all_fonts():
+    ''' Go to the Adobe CC website and sync EVERY font '''
     pass
 
 def platform_setup():
-    '''Set up paths'''
+    '''Set up paths for MacOS or Windows'''
     c = Config()
-    
-    if sys.platform == 'win32':
+
+    if sys.platform == 'win32': # Windows
         c.path_prefix = \
             os.path.expandvars(r'%HOME%\AppData\Roaming\Adobe\CoreSync\plugins\livetype')
-        c.font_dir = os.path.join(c.path_prefix, 'r')
-        c.manifest = os.path.join(c.path_prefix, r'c\entitlements.xml')
-    else: # mac
+        c.font_dir = pjoin(c.path_prefix, 'r')
+        c.manifest = pjoin(c.path_prefix, r'c\entitlements.xml')
+    else: # MacOS
         c.path_prefix = \
             os.path.expandvars(r'$HOME/Library/Application Support/Adobe/CoreSync/plugins/livetype')
         c.font_dir = os.path.join(c.path_prefix, '.r')
@@ -64,11 +95,11 @@ def platform_setup():
 def main():
     config = platform_setup()
 
-    
+
     # parse the command line arguments
 
     parser = argparse.ArgumentParser(description=\
-        'Extract Adobe CC Typekit fonts. ' 
+        'Extract Adobe CC Typekit fonts. '
         'Adobe CC Font Sync syncs your fonts from Typekit, however '
         'These fonts are not available')
     #parser.add_argument('--install', type=
@@ -76,10 +107,16 @@ def main():
     parser.parse_args()
 
 
+    try:
+        font_data = get_font_metadata(config.manifest)
+        pprint(font_data)
+    except IOError as e:
+        print("Error: The font manifest could not be found. Make sure Adobe Creative Cloud is running.")
 
-    font_data = get_font_metadata(config.manifest)
-    pprint(font_data)
-
+def test():
+    config = platform_setup()
+    fonts = get_font_metadata(config.manifest)
+    extract_fonts(fonts, config.font_dir, 'TEST')
 
 if __name__ == '__main__':
     main()
